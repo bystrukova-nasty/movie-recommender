@@ -2,11 +2,17 @@ import os
 import pandas as pd
 import joblib
 
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
@@ -21,6 +27,7 @@ model = joblib.load("best_model.pkl")
 movies = pd.read_csv("movies.csv")
 
 RATINGS_FILE = "ratings_user.csv"
+user_selected_movie = {}
 
 if not os.path.exists(RATINGS_FILE):
     pd.DataFrame(
@@ -112,6 +119,42 @@ async def save_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Используй формат:\n\n/rate movieId оценка"
         )
 
+async def button_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+
+    await query.answer()
+
+    movie_id, rating = query.data.split("_")
+
+    movie_id = int(movie_id)
+    rating = float(rating)
+
+    user_id = query.from_user.id
+
+    df = pd.read_csv(RATINGS_FILE)
+
+    new_row = pd.DataFrame(
+        [[user_id, movie_id, rating]],
+        columns=["userId", "movieId", "rating"]
+    )
+
+    df = pd.concat([df, new_row], ignore_index=True)
+
+    df.to_csv(RATINGS_FILE, index=False)
+
+    movie = movies[movies["movieId"] == movie_id]
+
+    if len(movie):
+        title = movie.iloc[0]["title"]
+    else:
+        title = str(movie_id)
+
+    await query.edit_message_text(
+        f"✅ Оценка сохранена\n\n"
+        f"🎬 {title}\n"
+        f"⭐ {rating}"
+    )
 
 async def my_ratings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -191,12 +234,24 @@ async def find_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    text = "🔎 Найдено:\n\n"
+    for _, row in results.head(5).iterrows():
 
-    for _, row in results.head(10).iterrows():
-        text += f"🎬 {row['title']}\n"
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⭐1", callback_data=f"{row['movieId']}_1"),
+                InlineKeyboardButton("⭐2", callback_data=f"{row['movieId']}_2"),
+                InlineKeyboardButton("⭐3", callback_data=f"{row['movieId']}_3"),
+                InlineKeyboardButton("⭐4", callback_data=f"{row['movieId']}_4"),
+                InlineKeyboardButton("⭐5", callback_data=f"{row['movieId']}_5"),
+            ]
+        ])
 
-    await update.message.reply_text(text)
+        await update.message.reply_text(
+            f"🎬 {row['title']}\n"
+            f"ID: {row['movieId']}\n\n"
+            f"Выбери оценку:",
+            reply_markup=keyboard
+        )
 
 
 async def movie_of_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -265,6 +320,7 @@ def main():
     app.add_handler(CommandHandler("find", find_movie))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("rate", save_rating))
+    app.add_handler(CallbackQueryHandler(button_rating))
 
     app.add_handler(
         MessageHandler(
