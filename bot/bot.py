@@ -20,7 +20,12 @@ TOKEN = os.getenv("BOT_TOKEN")
 
 model = joblib.load("best_model.pkl")
 movies = pd.read_csv("movies.csv")
+RATINGS_FILE = "ratings_user.csv"
 
+if not os.path.exists(RATINGS_FILE):
+    pd.DataFrame(
+        columns=["userId", "movieId", "rating"]
+    ).to_csv(RATINGS_FILE, index=False)
 
 # =====================
 # RECOMMENDATION ENGINE
@@ -51,8 +56,9 @@ def get_top_n(model, movies_df, user_id, n=10):
 
 keyboard = [
     ["🎬 Топ 10 фильмов", "🤖 Рекомендации"],
-    ["🔎 Найти фильм", "🎲 Фильм дня"],
-    ["📊 Статистика"],
+    ["🔎 Найти фильм", "⭐ Оценить фильм"],
+    ["🎲 Фильм дня", "📊 Статистика"],
+    ["📝 Мои оценки"]
 ]
 
 markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -67,7 +73,62 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎬 Привет! Я бот-рекомендатель фильмов.\nВыбери действие 👇",
         reply_markup=markup,
     )
+async def rate_movie(update, context):
+    await update.message.reply_text(
+        "Напиши:\n/rate movieId оценка\n\nПример:\n/rate 1 5"
+    )
+    async def save_rating(update, context):
+    try:
+        movie_id = int(context.args[0])
+        rating = float(context.args[1])
 
+        user_id = update.effective_user.id
+
+        df = pd.read_csv(RATINGS_FILE)
+
+        new_row = pd.DataFrame(
+            [[user_id, movie_id, rating]],
+            columns=["userId", "movieId", "rating"]
+        )
+
+        df = pd.concat([df, new_row], ignore_index=True)
+
+        df.to_csv(RATINGS_FILE, index=False)
+
+        await update.message.reply_text(
+            f"✅ Оценка сохранена\nФильм: {movie_id}\nОценка: {rating}"
+        )
+
+    except:
+        await update.message.reply_text(
+            "Используй формат:\n/rate movieId оценка"
+        )
+        async def my_ratings(update, context):
+    user_id = update.effective_user.id
+
+    df = pd.read_csv(RATINGS_FILE)
+
+    user_df = df[df["userId"] == user_id]
+
+    if len(user_df) == 0:
+        await update.message.reply_text(
+            "У тебя пока нет оценок."
+        )
+        return
+
+    text = "📝 Твои оценки:\n\n"
+
+    for _, row in user_df.tail(10).iterrows():
+        movie = movies[movies["movieId"] == row["movieId"]]
+
+        if len(movie):
+            title = movie.iloc[0]["title"]
+        else:
+            title = f"movieId={row['movieId']}"
+
+        text += f"⭐ {title} → {row['rating']}\n"
+
+    await update.message.reply_text(text)
 
 async def top_movies(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = 1
@@ -154,6 +215,10 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif text == "📊 Статистика":
         await stats(update, context)
+    elif text == "⭐ Оценить фильм":
+    await rate_movie(update, context)
+elif text == "📝 Мои оценки":
+    await my_ratings(update, context)
 
 
 # =====================
@@ -171,7 +236,7 @@ def main():
     app.add_handler(CommandHandler("recommend", recommend))
     app.add_handler(CommandHandler("find", find_movie))
     app.add_handler(CommandHandler("stats", stats))
-
+app.add_handler(CommandHandler("rate", save_rating))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
 
     print("Bot started...")
