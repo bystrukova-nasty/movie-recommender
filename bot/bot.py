@@ -1,5 +1,4 @@
 import os
-import random
 import pandas as pd
 import joblib
 
@@ -20,6 +19,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 
 model = joblib.load("best_model.pkl")
 movies = pd.read_csv("movies.csv")
+
 RATINGS_FILE = "ratings_user.csv"
 
 if not os.path.exists(RATINGS_FILE):
@@ -35,6 +35,7 @@ def get_top_n(model, movies_df, user_id, n=10):
     movie_ids = movies_df["movieId"].unique()
 
     predictions = []
+
     for movie_id in movie_ids:
         pred = model.predict(user_id, movie_id)
         predictions.append((movie_id, pred.est))
@@ -49,7 +50,6 @@ def get_top_n(model, movies_df, user_id, n=10):
 
     return result.sort_values("score", ascending=False)
 
-
 # =====================
 # KEYBOARD
 # =====================
@@ -63,21 +63,27 @@ keyboard = [
 
 markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-
 # =====================
 # COMMANDS
 # =====================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎬 Привет! Я бот-рекомендатель фильмов.\nВыбери действие 👇",
-        reply_markup=markup,
+        "🎬 Привет! Я бот-рекомендатель фильмов.\n\nВыбери действие 👇",
+        reply_markup=markup
     )
-async def rate_movie(update, context):
+
+
+async def rate_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Напиши:\n/rate movieId оценка\n\nПример:\n/rate 1 5"
+        "Для оценки фильма используй команду:\n\n"
+        "/rate movieId оценка\n\n"
+        "Например:\n"
+        "/rate 1 5"
     )
-    async def save_rating(update, context):
+
+
+async def save_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         movie_id = int(context.args[0])
         rating = float(context.args[1])
@@ -96,14 +102,19 @@ async def rate_movie(update, context):
         df.to_csv(RATINGS_FILE, index=False)
 
         await update.message.reply_text(
-            f"✅ Оценка сохранена\nФильм: {movie_id}\nОценка: {rating}"
+            f"✅ Оценка сохранена\n\n"
+            f"Фильм ID: {movie_id}\n"
+            f"Оценка: {rating}"
         )
 
-    except:
+    except Exception:
         await update.message.reply_text(
-            "Используй формат:\n/rate movieId оценка"
+            "Используй формат:\n\n/rate movieId оценка"
         )
-        async def my_ratings(update, context):
+
+
+async def my_ratings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     user_id = update.effective_user.id
 
     df = pd.read_csv(RATINGS_FILE)
@@ -112,13 +123,14 @@ async def rate_movie(update, context):
 
     if len(user_df) == 0:
         await update.message.reply_text(
-            "У тебя пока нет оценок."
+            "У тебя пока нет сохранённых оценок."
         )
         return
 
     text = "📝 Твои оценки:\n\n"
 
     for _, row in user_df.tail(10).iterrows():
+
         movie = movies[movies["movieId"] == row["movieId"]]
 
         if len(movie):
@@ -130,8 +142,10 @@ async def rate_movie(update, context):
 
     await update.message.reply_text(text)
 
+
 async def top_movies(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = 1
+
+    user_id = update.effective_user.id
 
     top_df = get_top_n(model, movies, user_id, n=10)
 
@@ -144,7 +158,8 @@ async def top_movies(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = 1
+
+    user_id = update.effective_user.id
 
     top_df = get_top_n(model, movies, user_id, n=5)
 
@@ -157,48 +172,57 @@ async def recommend(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def find_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     query = " ".join(context.args).lower()
 
     if not query:
-        await update.message.reply_text("Напиши: /find название фильма")
+        await update.message.reply_text(
+            "Напиши:\n/find название фильма"
+        )
         return
 
-    results = movies[movies["title"].str.lower().str.contains(query)]
+    results = movies[
+        movies["title"].str.lower().str.contains(query, na=False)
+    ]
 
     if results.empty:
-        await update.message.reply_text("Фильм не найден 😢")
+        await update.message.reply_text(
+            "Фильм не найден 😢"
+        )
         return
 
     text = "🔎 Найдено:\n\n"
 
-    for _, row in results.head(5).iterrows():
+    for _, row in results.head(10).iterrows():
         text += f"🎬 {row['title']}\n"
 
     await update.message.reply_text(text)
 
 
 async def movie_of_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     movie = movies.sample(1).iloc[0]
 
     await update.message.reply_text(
-        f"🎲 Фильм дня:\n\n🎬 {movie['title']}"
+        f"🎲 Фильм дня\n\n🎬 {movie['title']}"
     )
 
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     await update.message.reply_text(
-        "📊 Статистика:\n\n"
-        f"🎬 Фильмов: {len(movies)}\n"
-        f"🤖 Модель: SVD (Surprise)\n"
-        f"⚡ Статус: активен"
+        "📊 Статистика\n\n"
+        f"🎬 Фильмов в базе: {len(movies)}\n"
+        "🤖 Алгоритм: SVD (Collaborative Filtering)\n"
+        "⚡ Статус: активен"
     )
 
-
 # =====================
-# BUTTON HANDLER
+# BUTTONS
 # =====================
 
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     text = update.message.text
 
     if text == "🎬 Топ 10 фильмов":
@@ -208,26 +232,30 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await recommend(update, context)
 
     elif text == "🔎 Найти фильм":
-        await update.message.reply_text("Напиши: /find название фильма")
+        await update.message.reply_text(
+            "Используй:\n/find название фильма"
+        )
+
+    elif text == "⭐ Оценить фильм":
+        await rate_movie(update, context)
 
     elif text == "🎲 Фильм дня":
         await movie_of_day(update, context)
 
     elif text == "📊 Статистика":
         await stats(update, context)
-    elif text == "⭐ Оценить фильм":
-    await rate_movie(update, context)
-elif text == "📝 Мои оценки":
-    await my_ratings(update, context)
 
+    elif text == "📝 Мои оценки":
+        await my_ratings(update, context)
 
 # =====================
 # MAIN
 # =====================
 
 def main():
+
     if not TOKEN:
-        raise ValueError("BOT_TOKEN not set in environment variables")
+        raise ValueError("BOT_TOKEN not set")
 
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -236,8 +264,14 @@ def main():
     app.add_handler(CommandHandler("recommend", recommend))
     app.add_handler(CommandHandler("find", find_movie))
     app.add_handler(CommandHandler("stats", stats))
-app.add_handler(CommandHandler("rate", save_rating))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
+    app.add_handler(CommandHandler("rate", save_rating))
+
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            handle_buttons
+        )
+    )
 
     print("Bot started...")
     app.run_polling()
